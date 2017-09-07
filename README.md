@@ -9,3 +9,6 @@ The readme must be written...
  * [TimeLib](https://github.com/PaulStoffregen/Time)
  * Wire from std library
  * LiquidCrystal  from std library
+ 
+## Connections ##
+ ![connections](https://s25.postimg.org/f6fk3v7sf/prominixlamp.jpg)
