@@ -1,17 +1,42 @@
 /****************
  * CODE OPTIONS *
  ****************/
+// Enable debug (aka serial print)
 #define DEBBYUG 1
 #define SERIAL_BAUD 9600
+// pin of the backlight of LCD
 #define SCREENLIGHT 9
+// PWM out for the light
 #define EXTLIGHT 10
+// input for IR reade
 #define IR 2
+// pins for LCD
 #define LCD_RS 3
 #define LCD_E 4
 #define LCD_D4 5
 #define LCD_D5 6
 #define LCD_D6 7
 #define LCD_D7 8
+
+/*******************************************
+ * ARRAYS FOR REMOTE CONTROL CONFIGURATION *
+ *******************************************/
+unsigned long signalsUP[] = { 1, 0xFF906F };
+unsigned long signalsDOWN[] = { 1, 0xFFE01F };
+unsigned long signalsPOWER[] = { 1, 0xFFA25D };
+unsigned long signalsBACKLIGHT[] = { 1, 0xFFA25D };
+unsigned long signalsFUNCTION[] = { 1, 0xFFE21D };
+unsigned long signalsOK[] = { 1, 0xFF02FD };
+unsigned long signalsZERO[] = { 1, 0xFF6897 };
+unsigned long signalsONE[] = { 1, 0xFF30CF };
+unsigned long signalsTWO[] = { 1, 0xFF18E7 };
+unsigned long signalsTHREE[] = { 1, 0xFF7A85 };
+unsigned long signalsFOUR[] = { 1, 0xFF10EF };
+unsigned long signalsFIVE[] = { 1, 0xFF38C7 };
+unsigned long signalsSIX[] = { 1, 0xFF5AA5 };
+unsigned long signalsSEVEN[] = { 1, 0xFF42BD };
+unsigned long signalsEIGHT[] = { 1, 0xFF4AB5 };
+unsigned long signalsNINE[] = { 1, 0xFF52AD };
 
 /****************
  * DEBUG MACROS *
@@ -40,27 +65,45 @@
 #include <DS3232RTC.h>
 #include <TimeLib.h>
 #include <Wire.h>
-#include <LiquidCrystal.h> // includes the LiquidCrystal Library
+#include <LiquidCrystal.h>
 
 /********************
  * GLOBAL VARIABLES *
  ********************/
 LiquidCrystal lcd(LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
 IRrecv ir(IR);
-decode_results irResult;
-char prBuffer[20];
-char sPrBuffer[5];
-bool mainProspective = 1;
-bool alarmStatus = 0;
-int alarmHour = 7;
-int alarmMinute = 0;
-int alarmAdvance = 30;
-unsigned long lastAlarmRung = 0;
+decode_results irResult; // var to store result of the IR reader
+char prBuffer[20]; // a buffer to store a string to print in the lcd
+bool mainProspective = 1; // a bool var to store if the main prospective display hour/data (1) or hour/alarm (0)
+bool alarmStatus = 0;  // if alarm is enabled
+int alarmHour = 7; // alarm hour
+int alarmMinute = 0; // alarm minute
+int alarmAdvance = 30; // minutes of advance from whitch start to turn on (gradually) light
+unsigned long lastAlarmRung = 0; // store timestamp where alarm rung for last time (is needed to avoid that alarm starts again when i set it on after it rung)
 
 /*******************
  *   FUNCTIONS     *
  *******************/
-// Reset the screen
+
+/**
+ * Return true if a value is in an array else return false
+ * @param unsigned long signalsArray is an array with all good values (firis value is the len of the array)
+ * @param unsigned long signal is the signal to look for
+ * @return bool
+ */
+bool isSignalInArray(unsigned long signalsArray[], unsigned long signal) {
+    int arrayLen = signalsArray[0];
+    for (int i = 1; i <= arrayLen; i++) {
+        if (signal == signalsArray[i])
+            return true;
+    }
+    return false;
+}
+
+/**
+ * Empty a 2x16 screen and leave cursor at the end
+ *
+ */
 void lcdReset() {
     lcd.setCursor(0, 0);
     lcd.print("                ");
@@ -68,25 +111,43 @@ void lcdReset() {
     lcd.print("                ");
 }
 
-// Reset the screen and prepare to write
+/**
+ * Empty a 2x16 screen and leave cursor at the beginning (ready to print)
+ *
+ */
 void lcdFullReset() {
     lcdReset();
     lcd.setCursor(0, 0);
 }
 
-// Prepare to write to a line
+/**
+ * Set the cursor at the beginning of a line
+ *
+ */
 void cursorReset(int line) {
     lcd.setCursor(0, line);
 }
 
-// Set RTC time
+/**
+ * Set date/hour and save result to the RTC
+ * @param int ho the hour to set
+ * @param int mi the minute
+ * @param int se the second
+ * @param int da the date
+ * @param int mo the month
+ * @param int ye the year
+ *
+ */
 void setInsertTime(int ho, int mi, int se, int da, int mo, int ye) {
     // ho mi se da mo ye
     setTime(ho, mi, se, da, mo, ye);
     RTC.set(now());
 }
 
-// Change screen status light
+/**
+ * Change the screen status (turn it on if it is off and vice versa)
+ *
+ */
 void changeScreenStatus() {
     if (digitalRead(SCREENLIGHT) == LOW) {
         lcd.display();
@@ -98,7 +159,14 @@ void changeScreenStatus() {
     }
 }
 
-// Must always called twice
+/**
+ * Turn on the screen (turn it on if it was off and leave on if it was on)
+ * but at the end leave the screen in the state it was at the origin
+ * so you MUST call this function ALWAYS two times to restore screen status
+ *
+ * Sintetically when you want the screen is on you call this function and when
+ * the previus status could be restored you call again
+ */
 int changeScreenStatusWithMemory() {
     static int call = 1;
     static int previusLightStatus;
@@ -121,7 +189,10 @@ int changeScreenStatusWithMemory() {
     return call;
 }
 
-// Set outlight
+/**
+ * Set the output light
+ * @param int percent the percent of the light brightness (0 off, 100 full power)
+ */
 void setLight(int percent) {
     if (percent <= 0) {
         NDEBUGPRINT("Set light LOW");
@@ -186,13 +257,13 @@ void loop() {
     if (ir.decode(&irResult)) {
         // View change
         //up 0xFF906F down 0xFFE01F
-        if (irResult.value == 0xFF906F || irResult.value == 0xFFE01F) {
+        if (isSignalInArray(signalsUP, irResult.value) || isSignalInArray(signalsDOWN, irResult.value)) {
             mainProspective = mainProspective ? 0 : 1;
         }
 
         // Alarm On Off
         // pause/play
-        else if (irResult.value == 0xFF02FD) {
+        else if (isSignalInArray(signalsOK, irResult.value)) {
             alarmStatus = alarmStatus ? 0 : 1;
             if (alarmStatus) {
                 for (int i = 0; i < 10; i++) {
@@ -211,7 +282,7 @@ void loop() {
         }
 
         // Light triggers
-        else if (irResult.value == 0xFFA25D) {
+        else if (isSignalInArray(signalsPOWER, irResult.value)) {
             // If screen light is off i turn on
             changeScreenStatusWithMemory();
 
@@ -222,12 +293,12 @@ void loop() {
         }
 
         // SCREENLIGHT
-        else if (irResult.value == 0xFF629D) {
+        else if (isSignalInArray(signalsBACKLIGHT, irResult.value)) {
             changeScreenStatus();
         }
 
         // FUNC/STOP
-        else if (irResult.value == 0xFFE21D) {
+        else if (isSignalInArray(signalsFUNCTION, irResult.value)) {
             // If screen light is off i turn on
             changeScreenStatusWithMemory();
 
@@ -330,7 +401,7 @@ void alarmRingTrigger() {
 
         // exit
         if (ir.decode(&irResult)) {
-            if (irResult.value == 0xFFA25D) {
+            if (isSignalInArray(signalsPOWER, irResult.value)) {
                 setLight(0);
                 ir.resume();
                 delay(200);
@@ -356,10 +427,10 @@ void lightOnTrigger() {
         delay(200);
         if (ir.decode(&irResult)) {
             // if poweroff button
-            if (irResult.value == 0xFFA25D) {
+            if (isSignalInArray(signalsPOWER, irResult.value)) {
                 cycle = 0;
             }
-            else if (irResult.value == 0xFF906F && lightPercent <= 90) {
+            else if (isSignalInArray(signalsUP, irResult.value) && lightPercent <= 90) {
                 lightPercent += 10;
                 cursorReset(0);
                 lcd.print("   Light ");
@@ -369,7 +440,7 @@ void lightOnTrigger() {
                 lcd.print("%   ");
                 setLight(lightPercent);
             }
-            else if (irResult.value == 0xFFE01F && lightPercent >= 10) {
+            else if (isSignalInArray(signalsDOWN, irResult.value) && lightPercent >= 10) {
                 lightPercent -= 10;
                 cursorReset(0);
                 lcd.print("   Light ");
@@ -404,23 +475,23 @@ void menuTrigger() {
 
         // menu navigation
         // down
-        if (decode && menuStatus > 0 && irResult.value == 0xFFE01F) {
+        if (decode && menuStatus > 0 && isSignalInArray(signalsDOWN, irResult.value)) {
             DEBUGPRINT("--");
             menuStatus--;
         }
         // up
-        else if (decode && menuStatus < menuLen && irResult.value == 0xFF906F) {
+        else if (decode && menuStatus < menuLen && isSignalInArray(signalsUP, irResult.value)) {
             menuStatus++;
             DEBUGPRINT("++");
         }
 
         // if up overflow reset
-        else if (decode && menuStatus == menuLen && irResult.value == 0xFF906F) {
+        else if (decode && menuStatus == menuLen && isSignalInArray(signalsUP, irResult.value)) {
             menuStatus = 0;
         }
 
         // if down overflow reset
-        else if (decode && menuStatus == 0 && irResult.value == 0xFFE01F) {
+        else if (decode && menuStatus == 0 && isSignalInArray(signalsDOWN, irResult.value)) {
             menuStatus = menuLen;
         }
 
@@ -429,7 +500,7 @@ void menuTrigger() {
         if (menuStatus == 0) {
             lcd.print("exit            ");
             // if pressed func (enter)
-            if (decode && irResult.value == 0xFFE21D) {
+            if (decode && isSignalInArray(signalsFUNCTION, irResult.value)) {
                 menuStatus--;
             }
         }
@@ -439,7 +510,7 @@ void menuTrigger() {
             lcd.print("Set alarm       ");
 
             // ip pressed func (enter)
-            if (decode && irResult.value == 0xFFE21D) {
+            if (decode && isSignalInArray(signalsFUNCTION, irResult.value)) {
                 setAlarmTrigger();
             }
         }
@@ -449,7 +520,7 @@ void menuTrigger() {
             lcd.print("Set date & hour ");
 
             // ip pressed func (enter)
-            if (decode && irResult.value == 0xFFE21D) {
+            if (decode && isSignalInArray(signalsFUNCTION, irResult.value)) {
                 setDateAndHourTrigger();
             }
         }
@@ -568,7 +639,7 @@ void setDateAndHourTrigger() {
         bool decode = ir.decode(&irResult);
         if (decode) {
             // accept UP
-            if (irResult.value == 0xFF906F) {
+            if (isSignalInArray(signalsUP, irResult.value)) {
                 setInsertTime(hour, minute, second, day, month, year);
                 cursorReset(0);
                 lcd.print("     Done...    ");
@@ -579,12 +650,11 @@ void setDateAndHourTrigger() {
                 return;
             }
             // refuse DOWN
-            else if (irResult.value == 0xFFE01F) {
+            else if (isSignalInArray(signalsDOWN, irResult.value)) {
                 return;
             }
         }
     }
-
 }
 
 int getInputNumber() {
@@ -594,40 +664,29 @@ int getInputNumber() {
         bool decode = ir.decode(&irResult);
 
         if (decode) {
-            switch (irResult.value) {
-                // 0
-                case 0xFF6897:
-                    return 0;
-                    break;
-                case 0xFF30CF:
-                    return 1;
-                    break;
-                case 0xFF18E7:
-                    return 2;
-                    break;
-                case 0xFF7A85:
-                    return 3;
-                    break;
-                case 0xFF10EF:
-                    return 4;
-                    break;
-                case 0xFF38C7:
-                    return 5;
-                    break;
-                case 0xFF5AA5:
-                    return 6;
-                    break;
-                case 0xFF42BD:
-                    return 7;
-                    break;
-                case 0xFF4AB5:
-                    return 8;
-                    break;
-                case 0xFF52AD:
-                    return 9;
-                    break;
-            }
-        }
+            if (isSignalInArray(signalsZERO, irResult.value))
+                return 0;
+            else if (isSignalInArray(signalsONE, irResult.value))
+                return 1;
+            else if (isSignalInArray(signalsTWO, irResult.value))
+                return 2;
+            else if (isSignalInArray(signalsTHREE, irResult.value))
+                return 3;
+            else if (isSignalInArray(signalsFOUR, irResult.value))
+                return 4;
+            else if (isSignalInArray(signalsFIVE, irResult.value))
+                return 5;
+            else if (isSignalInArray(signalsSIX, irResult.value))
+                return 6;
+            else if (isSignalInArray(signalsSEVEN, irResult.value))
+                return 7;
+            else if (isSignalInArray(signalsEIGHT, irResult.value))
+                return 8;
+            else if (isSignalInArray(signalsNINE, irResult.value))
+                return 9;
 
+        }
     }
+
 }
+
