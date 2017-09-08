@@ -217,7 +217,7 @@ void setup() {
     Serial.begin(SERIAL_BAUD);
 #endif
 
-    // Set pis
+    // Set pins
     pinMode(SCREENLIGHT, OUTPUT);
     digitalWrite(SCREENLIGHT, LOW);
 
@@ -348,7 +348,7 @@ void updateStandardViewTrigger() {
  *
  */
 void checkAlarmTrigger() {
-    // check onlu if alarm status is on (true)
+    // check only if alarm status is on (true)
     if (alarmStatus) {
         int lAlarmMinute = alarmMinute;
         int lAlarmHour = alarmHour;
