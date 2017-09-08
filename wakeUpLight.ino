@@ -24,7 +24,7 @@
 unsigned long signalsUP[] = { 1, 0xFF906F };
 unsigned long signalsDOWN[] = { 1, 0xFFE01F };
 unsigned long signalsPOWER[] = { 1, 0xFFA25D };
-unsigned long signalsBACKLIGHT[] = { 1, 0xFFA25D };
+unsigned long signalsBACKLIGHT[] = { 1, 0xFF629D };
 unsigned long signalsFUNCTION[] = { 1, 0xFFE21D };
 unsigned long signalsOK[] = { 1, 0xFF02FD };
 unsigned long signalsZERO[] = { 1, 0xFF6897 };
@@ -217,6 +217,7 @@ void setup() {
     Serial.begin(SERIAL_BAUD);
 #endif
 
+    // Set pis
     pinMode(SCREENLIGHT, OUTPUT);
     digitalWrite(SCREENLIGHT, LOW);
 
@@ -228,13 +229,9 @@ void setup() {
 
     // Load Screen
     lcd.begin(16, 2);
-    //cursorReset(0);
+
+    // Turn on backlight
     digitalWrite(SCREENLIGHT, HIGH);
-    //lcd.print("   Loading...");
-    //delay(500);
-    //cursorReset(1);
-    //lcd.print("   Ver. 0.0.1");
-    //delay(500);
 
     // Load clock
     setSyncProvider(RTC.get);
@@ -255,16 +252,15 @@ void loop() {
     checkAlarmTrigger();
 
     if (ir.decode(&irResult)) {
-        // View change
-        //up 0xFF906F down 0xFFE01F
+        // Standard view change (if show time/date or time/alarm)
         if (isSignalInArray(signalsUP, irResult.value) || isSignalInArray(signalsDOWN, irResult.value)) {
             mainProspective = mainProspective ? 0 : 1;
         }
 
         // Alarm On Off
-        // pause/play
         else if (isSignalInArray(signalsOK, irResult.value)) {
             alarmStatus = alarmStatus ? 0 : 1;
+            // if turn on alarm
             if (alarmStatus) {
                 for (int i = 0; i < 10; i++) {
                     changeScreenStatus();
@@ -272,6 +268,7 @@ void loop() {
                     updateStandardViewTrigger();
                 }
             }
+            // turn off alarm
             else {
                 for (int i = 0; i < 4; i++) {
                     changeScreenStatus();
@@ -292,12 +289,12 @@ void loop() {
             changeScreenStatusWithMemory();
         }
 
-        // SCREENLIGHT
+        // BACKLIGHT
         else if (isSignalInArray(signalsBACKLIGHT, irResult.value)) {
             changeScreenStatus();
         }
 
-        // FUNC/STOP
+        // MENU
         else if (isSignalInArray(signalsFUNCTION, irResult.value)) {
             // If screen light is off i turn on
             changeScreenStatusWithMemory();
@@ -320,6 +317,10 @@ void loop() {
  *    TRIGGERS     *
  *******************/
 
+/**
+ * This trigger update the standard view (there are 2 possible views time/date or time/alarm)
+ *
+ */
 void updateStandardViewTrigger() {
     // Default view
     if (mainProspective) {
@@ -342,14 +343,21 @@ void updateStandardViewTrigger() {
     }
 }
 
+/**
+ * This trigger check if alarm must ring and if it must loadalarmRingTrigger()
+ *
+ */
 void checkAlarmTrigger() {
+    // check onlu if alarm status is on (true)
     if (alarmStatus) {
         int lAlarmMinute = alarmMinute;
         int lAlarmHour = alarmHour;
 
+        // if i subtract minutes and the hour don't change I do it
         if (lAlarmMinute - alarmAdvance >= 0) {
             lAlarmMinute -= alarmAdvance;
         }
+        // else i subtract an hour and add 60 minutes and then i subtract
         else {
             lAlarmHour--;
             if (lAlarmHour < 0) {
@@ -357,16 +365,21 @@ void checkAlarmTrigger() {
             }
             lAlarmMinute += (60 - alarmAdvance);
         }
+        // If it's time to ring and i have not rung alarm yet I load alarm trigger
         if (hour() == lAlarmHour && minute() == lAlarmMinute && (now() - lastAlarmRung) > 60 * alarmAdvance) {
             DEBUGPRINT(now());
             DEBUGPRINT(lastAlarmRung);
             lastAlarmRung = now();
-            //alarmStatus = 0;
+            //alarmStatus = 0; // disable alarm, but why?
             alarmRingTrigger();
         }
     }
 }
 
+/**
+ * This trigger wake up with light!!
+ *
+ */
 void alarmRingTrigger() {
     int light = 0;
     lcdFullReset();
@@ -390,10 +403,10 @@ void alarmRingTrigger() {
             setLight(light);
             NDEBUGPRINT("Changing light to:");
             DEBUGPRINT(light);
-
         }
         ir.resume();
         delay(200);
+
         // hour print
         cursorReset(1);
         sprintf(prBuffer, "    %02d:%02d:%02d    ", hour(), minute(), second());
@@ -411,9 +424,13 @@ void alarmRingTrigger() {
     }
 }
 
+/**
+ * This trigger turn on the light and allow to change brightness
+ */
 void lightOnTrigger() {
     static int lightPercent = 100;
     lcdFullReset();
+    cursorReset(1);
     lcd.print("   Light ");
     if (lightPercent < 100)
         lcd.print("0");
@@ -423,6 +440,10 @@ void lightOnTrigger() {
 
     int cycle = 1;
     while (cycle) {
+        cursorReset(0);
+        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour(), minute(), second());
+        lcd.print(prBuffer);
+
         ir.resume();
         delay(200);
         if (ir.decode(&irResult)) {
@@ -432,20 +453,22 @@ void lightOnTrigger() {
             }
             else if (isSignalInArray(signalsUP, irResult.value) && lightPercent <= 90) {
                 lightPercent += 10;
-                cursorReset(0);
+                cursorReset(1);
                 lcd.print("   Light ");
                 if (lightPercent < 100)
-                    lcd.print("0");
+                    lcd.print(" ");
                 lcd.print(lightPercent);
                 lcd.print("%   ");
                 setLight(lightPercent);
             }
             else if (isSignalInArray(signalsDOWN, irResult.value) && lightPercent >= 10) {
                 lightPercent -= 10;
-                cursorReset(0);
+                cursorReset(1);
                 lcd.print("   Light ");
                 if (lightPercent < 100)
-                    lcd.print("0");
+                    lcd.print(" ");
+                if (lightPercent == 0)
+                    lcd.print(" ");
                 lcd.print(lightPercent);
                 lcd.print("%   ");
                 setLight(lightPercent);
