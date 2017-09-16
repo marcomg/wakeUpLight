@@ -209,6 +209,43 @@ void setLight(int percent) {
     }
 }
 
+/* This function returns the DST offset for the current UTC time.
+ This is valid for the EU, for other places see
+ http://www.webexhibits.org/daylightsaving/i.html
+
+ Results have been checked for 2012-2030 (but should work since
+ 1996 to 2099) against the following references:
+ - http://www.uniquevisitor.it/magazine/ora-legale-italia.php
+ - http://www.calendario-365.it/ora-legale-orario-invernale.html
+
+ @param int d the day
+ @param int m the month
+ @param int y the year
+ @param int h the hour
+ @return bool (true if legal false if solar)
+ */
+bool dstOffset(int d, int m, unsigned int y, int h) {
+
+    // Day in March that DST starts on, at 1 am
+    int dstOn = (31 - (5 * y / 4 + 4) % 7);
+
+    // Day in October that DST ends  on, at 2 am
+    int dstOff = (31 - (5 * y / 4 + 1) % 7);
+
+    if ((m > 3 && m < 10) || (m == 3 && (d > dstOn || (d == dstOn && h >= 1))) || (m == 10 && (d < dstOff || (d == dstOff && h <= 1))))
+        return 1;
+    else
+        return 0;
+}
+
+/**
+ * Simple interface for dstOffset function
+ * @return bool
+ */
+bool nowDstOffset() {
+    return dstOffset(day(), month(), year(), hour());
+}
+
 /*******************
  *     SETUP       *
  *******************/
@@ -325,7 +362,7 @@ void updateStandardViewTrigger() {
     // Default view
     if (mainProspective) {
         cursorReset(0);
-        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour(), minute(), second());
+        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour() + nowDstOffset(), minute(), second());
         lcd.print(prBuffer);
         cursorReset(1);
         sprintf(prBuffer, "   %02d/%02d/%04d   ", day(), month(), year());
@@ -334,7 +371,7 @@ void updateStandardViewTrigger() {
     // Alarm view
     else {
         cursorReset(0);
-        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour(), minute(), second());
+        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour() + nowDstOffset(), minute(), second());
         lcd.print(prBuffer);
         cursorReset(1);
 
@@ -366,7 +403,7 @@ void checkAlarmTrigger() {
             lAlarmMinute += (60 - alarmAdvance);
         }
         // If it's time to ring and i have not rung alarm yet I load alarm trigger
-        if (hour() == lAlarmHour && minute() == lAlarmMinute && (now() - lastAlarmRung) > 60 * alarmAdvance) {
+        if (hour() + nowDstOffset() == lAlarmHour && minute() == lAlarmMinute && (now() - lastAlarmRung) > 60 * alarmAdvance) {
             DEBUGPRINT(now());
             DEBUGPRINT(lastAlarmRung);
             lastAlarmRung = now();
@@ -409,7 +446,7 @@ void alarmRingTrigger() {
 
         // hour print
         cursorReset(1);
-        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour(), minute(), second());
+        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour() + nowDstOffset(), minute(), second());
         lcd.print(prBuffer);
 
         // exit
@@ -441,7 +478,7 @@ void lightOnTrigger() {
     int cycle = 1;
     while (cycle) {
         cursorReset(0);
-        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour(), minute(), second());
+        sprintf(prBuffer, "    %02d:%02d:%02d    ", hour() + nowDstOffset(), minute(), second());
         lcd.print(prBuffer);
 
         ir.resume();
@@ -663,7 +700,7 @@ void setDateAndHourTrigger() {
         if (decode) {
             // accept UP
             if (isSignalInArray(signalsUP, irResult.value)) {
-                setInsertTime(hour, minute, second, day, month, year);
+                setInsertTime(hour - nowDstOffset(), minute, second, day, month, year);
                 cursorReset(0);
                 lcd.print("     Done...    ");
                 delay(500);
