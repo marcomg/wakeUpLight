@@ -470,7 +470,7 @@ void lightOnTrigger() {
     cursorReset(1);
     lcd.print("   Light ");
     if (lightPercent < 100)
-        lcd.print("0");
+        lcd.print(" ");
     lcd.print(lightPercent);
     lcd.print("%   ");
     setLight(lightPercent);
