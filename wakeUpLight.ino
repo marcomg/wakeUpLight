@@ -700,7 +700,7 @@ void setDateAndHourTrigger() {
         if (decode) {
             // accept UP
             if (isSignalInArray(signalsUP, irResult.value)) {
-                setInsertTime(hour - nowDstOffset(), minute, second, day, month, year);
+                setInsertTime(hour - dstOffset(day, month, year, hour), minute, second, day, month, year);
                 cursorReset(0);
                 lcd.print("     Done...    ");
                 delay(500);
